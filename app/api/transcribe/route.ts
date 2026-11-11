@@ -1,3 +1,4 @@
+import {speechQuota} from '../../../lib/shared-limits.ts';
 import {timingSafeEqual} from 'node:crypto';
 import {enabled,names,transcribe,productionProvider,type Provider} from '../../../lib/providers.ts';
 import {parseLetters} from '../../../lib/letters.ts';
@@ -48,6 +49,8 @@ export async function POST(request:Request){
     }finally{signal.removeEventListener('abort',cancel);}
     if(signal.aborted)return respond({error:'Audio upload timed out.'},408);
     if(!size)return respond({error:'Audio is required.'},400);
+    const blocked=await speechQuota(providers.length);
+    if(blocked)return blocked;
     const audio=new Blob(chunks,{type});
     const results=await Promise.all(providers.map(async provider=>{
       const start=performance.now();

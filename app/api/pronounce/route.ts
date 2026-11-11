@@ -1,3 +1,4 @@
+import {speechQuota} from '../../../lib/shared-limits.ts';
 import {createHash} from 'node:crypto';
 import {createLimiter,readLimited,sameOrigin} from '../../../lib/speech-server.ts';
 import {synthesize,ttsLanguage} from '../../../lib/tts.ts';
@@ -30,7 +31,11 @@ export async function POST(request:Request){
       if(!task){
         // Shared generation has its own deadline; one cancelled replay must not
         // cancel synthesis for another student requesting the same pronunciation.
-        task=synthesize(input.text,language,voice,AbortSignal.timeout(20_000)).then(result=>{
+        task=(async()=>{
+          const blocked=await speechQuota();
+          if(blocked)throw blocked;
+          return synthesize(input.text,language,voice,AbortSignal.timeout(20_000));
+        })().then(result=>{
           const old=cache.get(id);if(old){bytes-=old.audio.byteLength;cache.delete(id);}
           while(cache.size&&(cache.size>=128||bytes+result.byteLength>20*1024*1024)){
             const oldest=cache.keys().next().value!;bytes-=cache.get(oldest)!.audio.byteLength;cache.delete(oldest);
@@ -44,6 +49,7 @@ export async function POST(request:Request){
     }
     return new Response(audio,{headers:{'Content-Type':'audio/wav','Cache-Control':'private, max-age=86400','X-Content-Type-Options':'nosniff'}});
   }catch(error){
+    if(error instanceof Response)return error;
     if(error instanceof SyntaxError)return reply({error:'Invalid JSON.'},400);
     if(error instanceof Error&&error.message==='too-large')return reply({error:'Request exceeds 4 KB.'},413);
     return reply({error:'Cloud pronunciation is unavailable. Try the device voice.'},502);

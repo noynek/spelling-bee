@@ -103,3 +103,19 @@ Recording requires HTTPS outside localhost and explicit microphone permission. T
 The transcription API has MIME and streaming size checks, timeouts, a process-local 20-request/minute limit and a three-request concurrency limit. Pronunciation has a separate 30-request/minute limit, three-request concurrency cap, 512-character text limit and 4 KB request limit. The lab requires a server-configured token. Before exposing a paid speech endpoint broadly, put it behind deployment authentication and a shared rate/budget limiter: process-local limits do not coordinate across server replicas. Keep all provider keys in server environment variables.
 
 Deploy to a Node-capable Next.js host; this is a server application, not a static export. No hosted deployment or remote Git push was performed. Actual iPhone Safari microphone, voice availability, document-import and provider integration checks remain necessary on target devices.
+
+For the shared-password sign-in on Vercel, set these environment variables for every deployment environment that has a speech provider key.
+
+| Variable | Value |
+| --- | --- |
+| `APP_PASSWORD` | The shared password people type into the form |
+| `APP_SESSION_SECRET` | A separate random signing secret of at least 32 characters. Generate one with `openssl rand -hex 32` |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | The keys for a Cloudflare Turnstile widget that permits the deployment hostname |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | The REST credentials for Upstash Redis. The Vercel integration’s `KV_REST_API_URL` and `KV_REST_API_TOKEN` also work. |
+| `SPEECH_DAILY_LIMIT` | Optional provider call limit per UTC day. Defaults to 500 |
+
+The sign-in form checks Turnstile on the server and allows five submissions per IP per ten-minute window. A successful sign-in sets a signed cookie for seven days. Changing the password or signing secret invalidates existing sessions once the change is deployed. The speech endpoints require a session and share the Redis quota. Pronunciation cache hits do not consume the quota. A lab request counts once for each provider it calls. If Redis is unavailable, the app refuses new paid calls.
+
+Use a Turnstile widget for the stable production hostname. To use preview URLs, configure an allowed hostname for the preview you intend to test. See the [Turnstile setup guide](https://developers.cloudflare.com/turnstile/get-started/) and [Upstash REST guide](https://upstash.com/docs/redis/features/restapi).
+
+Set the variables and redeploy before turning off Vercel Authentication. Then open the production site in a private window to test the sign-in, and check that the two speech routes return HTTP 401 without a session. For local development, leave `APP_PASSWORD` unset to open the app directly, or set it alongside `APP_SESSION_SECRET` to try the form. Turnstile and Redis are optional in local development.
